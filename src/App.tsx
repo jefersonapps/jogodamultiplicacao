@@ -14,6 +14,7 @@ import * as THREE from "three";
 import { gsap } from "gsap";
 import { GameSetupModal } from "./components/game-setup-modal";
 import { Button } from "./components/ui/button";
+import { useScreenDetector } from "./hooks/useScreenDetector";
 
 type Player = "player1" | "player2";
 type Operation = "+" | "-" | "×" | "÷";
@@ -250,7 +251,9 @@ interface CameraManagerProps {
 }
 const CameraManager = ({ gameState, controlsRef }: CameraManagerProps) => {
   const { camera } = useThree();
-  const cameraPositions = useMemo(
+  const { isMobile } = useScreenDetector();
+
+  const cameraPositionsWeb = useMemo(
     () => ({
       spinners: new THREE.Vector3(0, 5, 15),
       board: new THREE.Vector3(0, 18, 15),
@@ -258,6 +261,18 @@ const CameraManager = ({ gameState, controlsRef }: CameraManagerProps) => {
     }),
     []
   );
+
+  const cameraPositionsMobile = useMemo(
+    () => ({
+      spinners: new THREE.Vector3(0, 5, 25),
+      board: new THREE.Vector3(0, 25, 25),
+      coin: new THREE.Vector3(0, 5, 12),
+    }),
+    []
+  );
+
+  const cameraPositions = isMobile ? cameraPositionsMobile : cameraPositionsWeb;
+
   const cameraTargets = useMemo(
     () => ({
       spinners: new THREE.Vector3(0, WALL_HEIGHT / 2, -BOARD_HEIGHT / 2),

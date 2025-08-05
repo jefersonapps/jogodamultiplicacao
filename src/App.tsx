@@ -15,25 +15,72 @@ import { gsap } from "gsap";
 import { GameSetupModal } from "./components/game-setup-modal";
 import { Button } from "./components/ui/button";
 
-/**
- * Hook para carregar e tocar um áudio.
- * @param url O caminho para o arquivo de áudio na pasta public.
- * @returns Uma função para tocar o som.
- */
+type Player = "player1" | "player2";
+type Operation = "+" | "-" | "×" | "÷";
+type Segment = { v: number; c: string };
+
+const PREDEFINED_BOARDS: Record<Operation, number[][]> = {
+  "×": [
+    [30, 18, 63, 64, 28, 7, 8],
+    [32, 45, 60, 70, 27, 6, 9],
+    [35, 48, 56, 72, 25, 5, 10],
+    [36, 1, 54, 80, 24, 4, 12],
+    [40, 16, 50, 81, 21, 3, 14],
+    [42, 100, 49, 90, 20, 2, 15],
+  ],
+
+  "+": [
+    [14, 8, 21, 12, 17, 9, 23],
+    [6, 25, 11, 18, 7, 15, 20],
+    [24, 10, 19, 5, 22, 13, 16],
+    [1, 2, 3, 4, 26, 27, 28],
+    [29, 30, 31, 32, 33, 34, 35],
+    [36, 37, 38, 39, 40, 41, 42],
+  ],
+
+  "-": [
+    [2, 5, 3, 7, 1, 6, 20],
+    [8, 4, 9, 0, 10, 15, 13],
+    [12, 17, 16, 14, 19, 11, 18],
+    [21, 22, 23, 24, 25, 26, 27],
+    [28, 29, 30, 31, 32, 33, 34],
+    [35, 36, 37, 38, 39, 40, 41],
+  ],
+
+  "÷": [
+    [9, 2, 8, 6, 10, 14, 18],
+    [4, 5, 7, 3, 1, 17, 11],
+    [21, 20, 19, 12, 16, 15, 13],
+    [22, 23, 24, 25, 26, 27, 28],
+    [29, 30, 32, 35, 36, 40, 42],
+    [45, 48, 50, 54, 56, 60, 81],
+  ],
+};
+
+const DEFAULT_SPINNER_SEGMENTS: Segment[] = [
+  { v: 1, c: "#8A2BE2" },
+  { v: 2, c: "#DC143C" },
+  { v: 3, c: "#FF4500" },
+  { v: 4, c: "#483D8B" },
+  { v: 5, c: "#FF69B4" },
+  { v: 6, c: "#FFD700" },
+  { v: 7, c: "#3CB371" },
+  { v: 8, c: "#00CED1" },
+  { v: 9, c: "#008B8B" },
+  { v: 10, c: "#D2B48C" },
+];
+
 const useAudio = (url: string) => {
   const audio = useRef(new Audio(url));
-
   const play = () => {
     audio.current.currentTime = 0;
-    audio.current.play().catch((error) => {
-      console.error(`Erro ao tocar o áudio ${url}:`, error);
-    });
+    audio.current
+      .play()
+      .catch((error) => console.error(`Erro ao tocar o áudio ${url}:`, error));
   };
-
   return play;
 };
 
-type Player = "player1" | "player2";
 type GameState =
   | "SETUP"
   | "COIN_FLIP"
@@ -44,19 +91,17 @@ type GameState =
   | "PLAYER_2_SPIN_2"
   | "PLAYER_2_ANSWER"
   | "GAME_OVER";
-
 interface PlayerSettings {
   name: string;
   value: string;
   light: string;
 }
-
 interface GameSettings {
   player1: PlayerSettings;
   player2: PlayerSettings;
   winCondition: "first_to_5" | "connect_3" | "most_on_full";
+  operation: Operation;
 }
-
 interface Particle {
   id: number;
   position: [number, number, number];
@@ -64,7 +109,6 @@ interface Particle {
   life: number;
   decay: number;
 }
-
 interface FireworkExplosionProps {
   position: [number, number, number];
   color: THREE.ColorRepresentation;
@@ -73,14 +117,12 @@ interface FireworkExplosionProps {
 function FireworkExplosion({ position, color }: FireworkExplosionProps) {
   const particleCount = 100;
   const [particles, setParticles] = useState<Particle[]>([]);
-
   useEffect(() => {
     const newParticles: Particle[] = [];
     for (let i = 0; i < particleCount; i++) {
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(Math.random() * 2 - 1);
       const speed = Math.random() * 8 + 4;
-
       newParticles.push({
         id: i,
         position: [0, 0, 0],
@@ -95,36 +137,26 @@ function FireworkExplosion({ position, color }: FireworkExplosionProps) {
     }
     setParticles(newParticles);
   }, []);
-
   useFrame((_, delta) => {
-    setParticles((prevParticles) => {
-      return prevParticles
-        .map((particle) => {
-          if (particle.life <= 0) return particle;
-
-          const newPos: [number, number, number] = [
-            particle.position[0] + particle.velocity[0] * delta,
-            particle.position[1] + particle.velocity[1] * delta,
-            particle.position[2] + particle.velocity[2] * delta,
-          ];
-
-          const newVel: [number, number, number] = [
-            particle.velocity[0],
-            particle.velocity[1] - 15 * delta,
-            particle.velocity[2],
-          ];
-
-          return {
-            ...particle,
-            position: newPos,
-            velocity: newVel,
-            life: particle.life - particle.decay * delta,
-          };
-        })
-        .filter((p) => p.life > 0);
-    });
+    setParticles((prevParticles) =>
+      prevParticles
+        .map((p) => ({
+          ...p,
+          position: [
+            p.position[0] + p.velocity[0] * delta,
+            p.position[1] + p.velocity[1] * delta,
+            p.position[2] + p.velocity[2] * delta,
+          ] as [number, number, number],
+          velocity: [
+            p.velocity[0],
+            p.velocity[1] - 15 * delta,
+            p.velocity[2],
+          ] as [number, number, number],
+          life: p.life - p.decay * delta,
+        }))
+        .filter((p) => p.life > 0)
+    );
   });
-
   return (
     <group position={position}>
       {particles.map((particle) => (
@@ -147,23 +179,18 @@ interface Explosion {
   color: THREE.ColorRepresentation;
   startTime: number;
 }
-
 interface FireworksProps {
   color: THREE.ColorRepresentation;
   isActive: boolean;
 }
-
 function Fireworks({ color, isActive }: FireworksProps) {
   const [explosions, setExplosions] = useState<Explosion[]>([]);
-
   const playWinnerSound = useAudio("/audio/vencedor.wav");
-
   useEffect(() => {
     if (!isActive) {
       setExplosions([]);
       return;
     }
-
     const firstExplosion: Explosion = {
       id: Date.now(),
       position: [
@@ -176,7 +203,6 @@ function Fireworks({ color, isActive }: FireworksProps) {
     };
     setExplosions([firstExplosion]);
     playWinnerSound();
-
     const interval = setInterval(() => {
       const newExplosion: Explosion = {
         id: Date.now() + Math.random(),
@@ -188,31 +214,21 @@ function Fireworks({ color, isActive }: FireworksProps) {
         color: color,
         startTime: Date.now(),
       };
-
       setExplosions((current) => {
         const now = Date.now();
         const filtered = current.filter((exp) => now - exp.startTime < 5000);
         return [...filtered, newExplosion].slice(-6);
       });
     }, 1000);
-
     return () => clearInterval(interval);
   }, [color, isActive]);
-
   useEffect(() => {
-    if (!isActive) {
-      setExplosions([]);
-    }
+    if (!isActive) setExplosions([]);
   }, [isActive]);
-
   return (
     <group>
-      {explosions.map((explosion) => (
-        <FireworkExplosion
-          key={explosion.id}
-          position={explosion.position}
-          color={explosion.color}
-        />
+      {explosions.map((e) => (
+        <FireworkExplosion key={e.id} position={e.position} color={e.color} />
       ))}
     </group>
   );
@@ -221,18 +237,17 @@ function Fireworks({ color, isActive }: FireworksProps) {
 const WALL_HEIGHT = 10;
 const BOARD_HEIGHT = 12 + 0.5;
 const BOARD_WIDTH = 14 + 0.5;
-
 const DEFAULT_GAME_SETTINGS: GameSettings = {
   player1: { name: "Azul (Padrão)", value: "#4682B4", light: "#00BFFF" },
   player2: { name: "Rosa (Padrão)", value: "#DB7093", light: "#FF1493" },
   winCondition: "first_to_5",
+  operation: "×",
 };
 
 interface CameraManagerProps {
   gameState: GameState;
   controlsRef: React.RefObject<OrbitControlsImpl | null>;
 }
-
 const CameraManager = ({ gameState, controlsRef }: CameraManagerProps) => {
   const { camera } = useThree();
   const cameraPositions = useMemo(
@@ -251,59 +266,32 @@ const CameraManager = ({ gameState, controlsRef }: CameraManagerProps) => {
     }),
     []
   );
-
   useEffect(() => {
     if (!controlsRef.current) return;
     const controls = controlsRef.current;
-
+    let pos = cameraPositions.spinners;
+    let target = cameraTargets.spinners;
     if (gameState === "COIN_FLIP") {
-      gsap.to(camera.position, {
-        ...cameraPositions.coin,
-        duration: 1.5,
-        ease: "power2.inOut",
-      });
-      if (controls.target) {
-        gsap.to(controls.target as THREE.Vector3, {
-          ...cameraTargets.coin,
-          duration: 1.5,
-          ease: "power2.inOut",
-        });
-      }
-      return;
+      pos = cameraPositions.coin;
+      target = cameraTargets.coin;
+    } else if (
+      gameState !== "SETUP" &&
+      gameState !== "GAME_OVER" &&
+      !gameState.endsWith("SPIN_1") &&
+      !gameState.endsWith("SPIN_2")
+    ) {
+      pos = cameraPositions.board;
+      target = cameraTargets.board;
     }
-
-    if (gameState === "SETUP" || gameState === "GAME_OVER") {
-      gsap.to(camera.position, {
-        ...cameraPositions.spinners,
-        duration: 1.5,
-        ease: "power2.inOut",
-      });
-      if (controls.target) {
-        gsap.to(controls.target as THREE.Vector3, {
-          ...cameraTargets.spinners,
-          duration: 1.5,
-          ease: "power2.inOut",
-        });
-      }
-      return;
-    }
-
-    const isSpinningPhase =
-      gameState.endsWith("SPIN_1") || gameState.endsWith("SPIN_2");
-    gsap.to(camera.position, {
-      ...(isSpinningPhase ? cameraPositions.spinners : cameraPositions.board),
-      duration: 1.5,
-      ease: "power2.inOut",
-    });
+    gsap.to(camera.position, { ...pos, duration: 1.5, ease: "power2.inOut" });
     if (controls.target) {
       gsap.to(controls.target as THREE.Vector3, {
-        ...(isSpinningPhase ? cameraTargets.spinners : cameraTargets.board),
+        ...target,
         duration: 1.5,
         ease: "power2.inOut",
       });
     }
   }, [gameState, camera, controlsRef, cameraPositions, cameraTargets]);
-
   return null;
 };
 
@@ -313,7 +301,6 @@ interface PieSliceProps {
   angleLength: number;
   color: THREE.ColorRepresentation;
 }
-
 const PieSlice = ({
   radius,
   startAngle,
@@ -345,58 +332,54 @@ interface Spinner3DProps {
   onSpinStart: (() => void) | null;
   onSpinEnd: (value: number) => void;
   isSpinning: boolean;
+  targetValue: number | null;
+  segments: Segment[];
 }
-
 const Spinner3D = ({
   position,
   onSpinStart,
   onSpinEnd,
   isSpinning,
+  targetValue,
+  segments,
 }: Spinner3DProps) => {
   const spinnerGroupRef = useRef<THREE.Group>(null);
-  const segments = useMemo(
-    () => [
-      { v: 1, c: "#8A2BE2" },
-      { v: 2, c: "#DC143C" },
-      { v: 3, c: "#FF4500" },
-      { v: 4, c: "#483D8B" },
-      { v: 5, c: "#FF69B4" },
-      { v: 6, c: "#FFD700" },
-      { v: 7, c: "#3CB371" },
-      { v: 8, c: "#00CED1" },
-      { v: 9, c: "#008B8B" },
-      { v: 10, c: "#D2B48C" },
-    ],
-    []
-  );
   const segmentAngle = (2 * Math.PI) / segments.length;
   useEffect(() => {
-    if (isSpinning && spinnerGroupRef.current) {
-      const randomSegmentIndex = Math.floor(Math.random() * segments.length);
-      const selectedValue = segments[randomSegmentIndex].v;
-      const finalRestingAngle = randomSegmentIndex * segmentAngle;
+    if (isSpinning && spinnerGroupRef.current && targetValue !== null) {
+      const targetSegmentIndex = segments.findIndex((s) => s.v === targetValue);
+      if (targetSegmentIndex === -1) {
+        console.error("Valor alvo inválido para o spinner:", targetValue);
+        return;
+      }
+      const finalRestingAngle = targetSegmentIndex * segmentAngle;
       const currentRotation = spinnerGroupRef.current.rotation.z;
       const currentRotationMod = currentRotation % (2 * Math.PI);
       let shortestDistance = finalRestingAngle - currentRotationMod;
       if (shortestDistance > 0) shortestDistance -= 2 * Math.PI;
-      const extraSpins = 4 * (2 * Math.PI);
-      const totalSpinTravel = shortestDistance - extraSpins;
-      const targetRotation = currentRotation + totalSpinTravel;
+      const targetRotation =
+        currentRotation + (shortestDistance - 4 * (2 * Math.PI));
       gsap.to(spinnerGroupRef.current.rotation, {
         z: targetRotation,
         duration: 5,
         ease: "power2.out",
-        onComplete: () => onSpinEnd(selectedValue),
+        onComplete: () => onSpinEnd(targetValue),
       });
     }
-  }, [isSpinning, onSpinEnd, segments, segmentAngle]);
+  }, [isSpinning, targetValue, onSpinEnd, segments, segmentAngle]);
+
   return (
-    <group position={position} onClick={onSpinStart ? onSpinStart : undefined}>
+    <group position={position} onClick={onSpinStart || undefined}>
       <group ref={spinnerGroupRef}>
         {segments.map((segment, i) => {
           const midAngle = Math.PI / 2 - i * segmentAngle;
           const startAngle = midAngle - segmentAngle / 2;
           const textRadius = 1.3;
+          const textPosition: [number, number, number] = [
+            Math.cos(midAngle) * textRadius,
+            Math.sin(midAngle) * textRadius,
+            0.101,
+          ];
           return (
             <React.Fragment key={i}>
               <PieSlice
@@ -406,13 +389,9 @@ const Spinner3D = ({
                 color={segment.c}
               />
               <Text
-                position={[
-                  Math.cos(midAngle) * textRadius,
-                  Math.sin(midAngle) * textRadius,
-                  0.101,
-                ]}
+                position={textPosition}
                 rotation={[0, 0, midAngle - Math.PI / 2]}
-                fontSize={0.4}
+                fontSize={segment.v > 99 ? 0.3 : 0.4}
                 color="black"
                 anchorX="center"
                 anchorY="middle"
@@ -435,11 +414,9 @@ interface RestartButton3DProps {
   position: [number, number, number];
   onClick: () => void;
 }
-
 const RestartButton3D = ({ position, onClick }: RestartButton3DProps) => {
   const [hovered, setHovered] = useState(false);
   const ref = useRef<THREE.Group>(null);
-
   useEffect(() => {
     document.body.style.cursor = hovered ? "pointer" : "auto";
     if (ref.current) {
@@ -451,7 +428,6 @@ const RestartButton3D = ({ position, onClick }: RestartButton3DProps) => {
       });
     }
   }, [hovered]);
-
   return (
     <group
       ref={ref}
@@ -486,7 +462,6 @@ interface EquationDisplay3DProps {
   winnerInfo: PlayerSettings | null;
   onRestart: () => void;
 }
-
 const EquationDisplay3D = ({
   spinner1Value,
   spinner2Value,
@@ -499,15 +474,8 @@ const EquationDisplay3D = ({
 }: EquationDisplay3DProps) => {
   const fontUrl = "/fonts/Bangers-Regular.ttf";
   const Z_VALUE = -0.15 + 0.01;
-  const playerColor =
-    currentPlayer === "player1"
-      ? gameSettings.player1.light
-      : gameSettings.player2.light;
-  const playerName =
-    currentPlayer === "player1"
-      ? gameSettings.player1.name.split(" ")[0]
-      : gameSettings.player2.name.split(" ")[0];
-
+  const playerColor = gameSettings[currentPlayer].light;
+  const playerName = gameSettings[currentPlayer].name.split(" ")[0];
   return (
     <group position={[0, 0, 0]}>
       <mesh position={[0, 0, -0.2]}>
@@ -520,7 +488,6 @@ const EquationDisplay3D = ({
           <meshStandardMaterial color="#333333" roughness={0.5} />
         </RoundedBox>
       </mesh>
-
       {isGameOver && winnerInfo ? (
         <group>
           <Text
@@ -533,9 +500,7 @@ const EquationDisplay3D = ({
             outlineWidth={0.05}
             outlineColor="#000000"
             textAlign="center"
-          >
-            {`O Jogador\n${winnerInfo.name.split(" ")[0]} Ganhou!`}
-          </Text>
+          >{`O Jogador\n${winnerInfo.name.split(" ")[0]} Ganhou!`}</Text>
           <RestartButton3D position={[0, -2, Z_VALUE]} onClick={onRestart} />
         </group>
       ) : (
@@ -550,7 +515,7 @@ const EquationDisplay3D = ({
             outlineWidth={0.05}
             outlineColor="#000000"
           >
-            JOGO DA MULTIPLICAÇÃO
+            JOGO DA TABUADA
           </Text>
           <Text
             font={fontUrl}
@@ -561,13 +526,15 @@ const EquationDisplay3D = ({
             anchorY="middle"
             outlineWidth={0.03}
             outlineColor="#000000"
-          >
-            {`Vez do Jogador: ${playerName}`}
-          </Text>
+          >{`Vez do Jogador: ${playerName}`}</Text>
           {spinner1Value !== null && (
             <Text
               font={fontUrl}
-              position={[spinner1Value > 9 ? -1.8 : -1.5, 0, Z_VALUE]}
+              position={[
+                spinner1Value > 99 ? -2.2 : spinner1Value > 9 ? -1.8 : -1.5,
+                0,
+                Z_VALUE,
+              ]}
               fontSize={2}
               color="#FFD700"
               anchorX="center"
@@ -588,7 +555,7 @@ const EquationDisplay3D = ({
             outlineColor="#000000"
             outlineWidth={0.05}
           >
-            ×
+            {gameSettings.operation}
           </Text>
           {spinner2Value !== null && (
             <Text
@@ -627,7 +594,6 @@ const EquationDisplay3D = ({
 interface PointerProps {
   position: [number, number, number];
 }
-
 const Pointer = ({ position }: PointerProps) => {
   const shape = useMemo(() => {
     const s = new THREE.Shape();
@@ -652,27 +618,24 @@ interface Token3DProps {
   color: THREE.ColorRepresentation;
   position: [number, number, number];
 }
-
-const Token3D = ({ color, position }: Token3DProps) => {
-  return (
-    <group position={position}>
-      <Cylinder
-        args={[0.7, 0.7, 0.2, 32]}
-        rotation={[Math.PI / 2, 0, 0]}
-        position={[0, 0, -0.01]}
-      >
-        <meshStandardMaterial
-          color={color}
-          transparent={true}
-          opacity={0.4}
-          roughness={0.2}
-          metalness={0.2}
-          depthWrite={false}
-        />
-      </Cylinder>
-    </group>
-  );
-};
+const Token3D = ({ color, position }: Token3DProps) => (
+  <group position={position}>
+    <Cylinder
+      args={[0.7, 0.7, 0.2, 32]}
+      rotation={[Math.PI / 2, 0, 0]}
+      position={[0, 0, -0.01]}
+    >
+      <meshStandardMaterial
+        color={color}
+        transparent
+        opacity={0.4}
+        roughness={0.2}
+        metalness={0.2}
+        depthWrite={false}
+      />
+    </Cylinder>
+  </group>
+);
 
 interface Cell3DProps {
   position: [number, number, number];
@@ -682,7 +645,6 @@ interface Cell3DProps {
   flashing: boolean;
   gameSettings: GameSettings;
 }
-
 const Cell3D = ({
   position,
   value,
@@ -694,7 +656,6 @@ const Cell3D = ({
   const cellRef =
     useRef<THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial>>(null);
   const playerColorData = player ? gameSettings[player] : null;
-
   useEffect(() => {
     if (flashing && cellRef.current) {
       const originalColor = cellRef.current.material.color.clone();
@@ -711,7 +672,6 @@ const Cell3D = ({
       });
     }
   }, [flashing]);
-
   useEffect(() => {
     if (cellRef.current) {
       const material = cellRef.current.material;
@@ -728,12 +688,13 @@ const Cell3D = ({
       }
     }
   }, [player, playerColorData]);
-
-  const color = playerColorData ? playerColorData.value : "#CCCCCC";
   return (
     <group position={position} onClick={onClick}>
       <Box ref={cellRef} args={[1.9, 1.9, 0.1]} receiveShadow>
-        <meshStandardMaterial color={color} roughness={0.2} />
+        <meshStandardMaterial
+          color={playerColorData ? playerColorData.value : "#CCCCCC"}
+          roughness={0.2}
+        />
       </Box>
       <Text
         position={[0, 0, 0.1]}
@@ -759,7 +720,6 @@ interface Board3DProps {
   flashingCell: { row: number; col: number } | null;
   gameSettings: GameSettings;
 }
-
 const Board3D = ({
   boardLayout,
   boardState,
@@ -768,34 +728,34 @@ const Board3D = ({
   gameSettings,
 }: Board3DProps) => {
   const cellSize = 2.1;
-  const numCols = boardLayout[0].length;
+  const numCols = boardLayout[0]?.length || 7;
   const numRows = boardLayout.length;
   const gridWidth = numCols * cellSize;
   const gridHeight = numRows * cellSize;
   return (
     <group position={[0, 0.1, 0]} rotation={[-Math.PI / 2, 0, 0]}>
       {boardLayout.map((row, rowIndex) =>
-        row.map((cellValue, colIndex) => {
-          const isFlashing =
-            flashingCell !== null &&
-            flashingCell.row === rowIndex &&
-            flashingCell.col === colIndex;
-          return (
-            <Cell3D
-              key={`${rowIndex}-${colIndex}`}
-              position={[
-                colIndex * cellSize - gridWidth / 2 + cellSize / 2,
-                rowIndex * cellSize - gridHeight / 2 + cellSize / 2,
-                0,
-              ]}
-              value={cellValue}
-              player={boardState[rowIndex][colIndex]}
-              onClick={() => onCellClick(cellValue, rowIndex, colIndex)}
-              flashing={!!isFlashing}
-              gameSettings={gameSettings}
-            />
-          );
-        })
+        row.map((cellValue, colIndex) => (
+          <Cell3D
+            key={`${rowIndex}-${colIndex}`}
+            position={[
+              colIndex * cellSize - gridWidth / 2 + cellSize / 2,
+              rowIndex * cellSize - gridHeight / 2 + cellSize / 2,
+              0,
+            ]}
+            value={cellValue}
+            player={boardState[rowIndex][colIndex]}
+            onClick={() => onCellClick(cellValue, rowIndex, colIndex)}
+            flashing={
+              !!(
+                flashingCell &&
+                flashingCell.row === rowIndex &&
+                flashingCell.col === colIndex
+              )
+            }
+            gameSettings={gameSettings}
+          />
+        ))
       )}
     </group>
   );
@@ -806,7 +766,6 @@ interface StageLightingProps {
   winner: Player | null;
   gameSettings: GameSettings;
 }
-
 const StageLighting = ({
   currentPlayer,
   winner,
@@ -815,11 +774,9 @@ const StageLighting = ({
   const light1Ref = useRef<THREE.SpotLight>(null);
   const light2Ref = useRef<THREE.SpotLight>(null);
   const boardTarget = useMemo(() => new THREE.Object3D(), []);
-
   const activePlayer = winner || currentPlayer;
   const lightColor1 = gameSettings.player1.light;
   const lightColor2 = gameSettings.player2.light;
-
   useFrame(({ clock }) => {
     const time = clock.getElapsedTime();
     if (light1Ref.current) {
@@ -831,12 +788,10 @@ const StageLighting = ({
       light2Ref.current.position.z = Math.cos(-time * 0.5) * 15;
     }
   });
-
   useEffect(() => {
     const targetColor = new THREE.Color(
       activePlayer === "player1" ? lightColor1 : lightColor2
     );
-
     if (light1Ref.current) {
       gsap.to(light1Ref.current.color, {
         r: targetColor.r,
@@ -856,11 +811,9 @@ const StageLighting = ({
       });
     }
   }, [activePlayer, lightColor1, lightColor2]);
-
   return (
     <>
       <primitive object={boardTarget} position={[0, 0, 0]} />
-
       <pointLight
         position={[-6, 6, -4]}
         intensity={10}
@@ -873,7 +826,6 @@ const StageLighting = ({
         color="#FFFFFF"
         distance={30}
       />
-
       <SpotLight
         ref={light1Ref}
         target={boardTarget}
@@ -913,36 +865,28 @@ const CoinFlip = ({ onFlipComplete, gameSettings }: CoinFlipProps) => {
 
   useEffect(() => {
     if (!coinRef.current || !gameSettings) return;
-
     const randomRotations = (Math.random() * 3 + 3) * (2 * Math.PI);
-
     gsap.to(coinRef.current.rotation, {
       x: randomRotations,
       duration: 3,
       ease: "power3.inOut",
       onComplete: () => {
         if (!coinRef.current) return;
-
         const finalRotation = coinRef.current.rotation.x % (2 * Math.PI);
         const result =
           finalRotation > Math.PI / 2 && finalRotation < (3 * Math.PI) / 2
             ? "coroa"
             : "cara";
-
-        const currentX = coinRef.current.rotation.x;
-        const nearestFullCircle =
-          Math.round(currentX / (2 * Math.PI)) * (2 * Math.PI);
-
-        const finalAngleOffset = result === "cara" ? Math.PI / 2 : -Math.PI / 2;
-        const targetX = nearestFullCircle + finalAngleOffset;
-
+        const targetX =
+          Math.round(coinRef.current.rotation.x / (2 * Math.PI)) *
+            (2 * Math.PI) +
+          (result === "cara" ? Math.PI / 2 : -Math.PI / 2);
         gsap.to(coinRef.current.rotation, {
           x: targetX,
           duration: 0.5,
           ease: "power2.out",
           onComplete: () => {
             onFlipComplete(result);
-
             setTimeout(() => {
               gsap.to(coinRef.current!.scale, {
                 x: 0,
@@ -963,30 +907,27 @@ const CoinFlip = ({ onFlipComplete, gameSettings }: CoinFlipProps) => {
 
   return (
     <group ref={coinRef} position={[0, 5, 0]}>
-      {" "}
       <Cylinder args={[2.5, 2.5, 0.2, 64]} castShadow receiveShadow>
         <meshStandardMaterial color="#FFD700" metalness={0.6} roughness={0.2} />
       </Cylinder>
-      <Cylinder
-        args={[2.2, 2.2, 0.05, 64]}
-        position={[0, 0.125, 0]}
-        rotation={[0, 0, 0]}
-      >
+
+      <Cylinder args={[2.2, 2.2, 0.05, 64]} position={[0, 0.125, 0]}>
         <meshStandardMaterial
           color={gameSettings.player1.value}
           metalness={0.1}
           roughness={0.5}
+          emissive={gameSettings.player1.value}
+          emissiveIntensity={1}
         />
       </Cylinder>
-      <Cylinder
-        args={[2.2, 2.2, 0.05, 64]}
-        position={[0, -0.125, 0]}
-        rotation={[0, 0, 0]}
-      >
+
+      <Cylinder args={[2.2, 2.2, 0.05, 64]} position={[0, -0.125, 0]}>
         <meshStandardMaterial
           color={gameSettings.player2.value}
           metalness={0.1}
           roughness={0.5}
+          emissive={gameSettings.player2.value}
+          emissiveIntensity={1}
         />
       </Cylinder>
     </group>
@@ -997,6 +938,9 @@ interface SceneHandlers {
   currentPlayer: Player;
   isSpinning1: boolean;
   isSpinning2: boolean;
+  spinner1Target: number | null;
+  spinner2Target: number | null;
+  spinner1Segments: Segment[];
   handleSpin1Start: (() => void) | null;
   handleSpin1End: (value: number) => void;
   handleSpin2Start: (() => void) | null;
@@ -1004,7 +948,6 @@ interface SceneHandlers {
   handleCellClick: (cellValue: number, row: number, col: number) => void;
   handleCoinFlipComplete: (result: "cara" | "coroa") => void;
 }
-
 interface SceneProps {
   gameState: GameState;
   handlers: SceneHandlers;
@@ -1018,7 +961,6 @@ interface SceneProps {
   winner: Player | null;
   onRestart: () => void;
 }
-
 const Scene = ({
   gameState,
   handlers,
@@ -1033,12 +975,26 @@ const Scene = ({
   onRestart,
 }: SceneProps) => {
   const controlsRef = useRef<OrbitControlsImpl>(null);
+
+  const wallGroupRef = useRef<THREE.Group>(null);
+
+  useEffect(() => {
+    if (!wallGroupRef.current) return;
+
+    const shouldBeVisible = gameState !== "SETUP" && gameState !== "COIN_FLIP";
+
+    gsap.to(wallGroupRef.current.scale, {
+      y: shouldBeVisible ? 1 : 0,
+      duration: 1.2,
+      ease: "power3.out",
+    });
+  }, [gameState]);
+
   const isPlayerTurn = gameState.startsWith(
     `PLAYER_${handlers.currentPlayer === "player1" ? 1 : 2}`
   );
   const canSpin1 = isPlayerTurn && gameState.endsWith("SPIN_1");
   const canSpin2 = isPlayerTurn && gameState.endsWith("SPIN_2");
-
   const winnerInfo = winner ? gameSettings[winner] : null;
 
   return (
@@ -1050,7 +1006,6 @@ const Scene = ({
         gameSettings={gameSettings}
         winner={winner}
       />
-
       {gameState === "COIN_FLIP" && (
         <CoinFlip
           onFlipComplete={handlers.handleCoinFlipComplete}
@@ -1058,25 +1013,33 @@ const Scene = ({
         />
       )}
 
-      {gameState !== "GAME_OVER" && gameState !== "COIN_FLIP" && (
-        <group position={[0, WALL_HEIGHT / 2, -BOARD_HEIGHT / 2]}>
-          <Spinner3D
-            position={[-5, 0, 0]}
-            isSpinning={handlers.isSpinning1}
-            onSpinStart={canSpin1 ? handlers.handleSpin1Start : null}
-            onSpinEnd={handlers.handleSpin1End}
-          />
-          <Spinner3D
-            position={[5, 0, 0]}
-            isSpinning={handlers.isSpinning2}
-            onSpinStart={canSpin2 ? handlers.handleSpin2Start : null}
-            onSpinEnd={handlers.handleSpin2End}
-          />
-        </group>
-      )}
+      <group
+        ref={wallGroupRef}
+        position={[0, 0, -BOARD_HEIGHT / 2]}
+        scale-y={0}
+      >
+        <group position={[0, WALL_HEIGHT / 2, 0]}>
+          {gameState !== "GAME_OVER" && (
+            <>
+              <Spinner3D
+                position={[-5, 0, 0]}
+                isSpinning={handlers.isSpinning1}
+                targetValue={handlers.spinner1Target}
+                onSpinStart={canSpin1 ? handlers.handleSpin1Start : null}
+                onSpinEnd={handlers.handleSpin1End}
+                segments={handlers.spinner1Segments}
+              />
+              <Spinner3D
+                position={[5, 0, 0]}
+                isSpinning={handlers.isSpinning2}
+                targetValue={handlers.spinner2Target}
+                onSpinStart={canSpin2 ? handlers.handleSpin2Start : null}
+                onSpinEnd={handlers.handleSpin2End}
+                segments={DEFAULT_SPINNER_SEGMENTS}
+              />
+            </>
+          )}
 
-      {gameState !== "COIN_FLIP" && (
-        <group position={[0, WALL_HEIGHT / 2, -BOARD_HEIGHT / 2]}>
           <EquationDisplay3D
             spinner1Value={spinner1Value}
             spinner2Value={spinner2Value}
@@ -1088,18 +1051,19 @@ const Scene = ({
             onRestart={onRestart}
           />
         </group>
-      )}
+      </group>
 
-      <Board3D
-        boardLayout={boardLayout}
-        boardState={boardState}
-        onCellClick={handlers.handleCellClick}
-        flashingCell={flashingCell}
-        gameSettings={gameSettings}
-      />
+      {boardLayout.length > 0 && (
+        <Board3D
+          boardLayout={boardLayout}
+          boardState={boardState}
+          onCellClick={handlers.handleCellClick}
+          flashingCell={flashingCell}
+          gameSettings={gameSettings}
+        />
+      )}
       <OrbitControls ref={controlsRef} />
       <CameraManager gameState={gameState} controlsRef={controlsRef} />
-
       <Fireworks
         color={winnerInfo ? winnerInfo.value : "#FFD700"}
         isActive={gameState === "GAME_OVER" && winnerInfo !== null}
@@ -1120,23 +1084,23 @@ function App() {
   const [spinner1Value, setSpinner1Value] = useState<number | null>(null);
   const [spinner2Value, setSpinner2Value] = useState<number | null>(null);
   const [winner, setWinner] = useState<Player | null>(null);
+  const [spinner1Target, setSpinner1Target] = useState<number | null>(null);
+  const [spinner2Target, setSpinner2Target] = useState<number | null>(null);
+  const [boardLayout, setBoardLayout] = useState<number[][]>(
+    PREDEFINED_BOARDS["×"]
+  );
+  const [spinner1Segments, setSpinner1Segments] = useState<Segment[]>(
+    DEFAULT_SPINNER_SEGMENTS
+  );
+  const [divisionTableNumber, setDivisionTableNumber] = useState<number | null>(
+    null
+  );
 
   const playCoinSound = useAudio("/audio/moeda.mp3");
   const playSpinnerSound = useAudio("/audio/roleta.mp3");
   const playSuccessSound = useAudio("/audio/sucesso.mp3");
   const playErrorSound = useAudio("/audio/erro.mp3");
 
-  const boardLayout = useMemo(
-    () => [
-      [30, 18, 63, 64, 28, 7, 8],
-      [32, 45, 60, 70, 27, 6, 9],
-      [35, 48, 56, 72, 25, 5, 10],
-      [36, 1, 54, 80, 24, 4, 12],
-      [40, 16, 50, 81, 21, 3, 14],
-      [42, 100, 49, 90, 20, 2, 15],
-    ],
-    []
-  );
   const initialBoardState = useMemo(
     () =>
       Array(6)
@@ -1151,8 +1115,25 @@ function App() {
     col: number;
   } | null>(null);
 
+  const prepareTurn = (settings: GameSettings) => {
+    if (settings.operation === "÷") {
+      const tableNumber = Math.floor(Math.random() * 10) + 1;
+      setDivisionTableNumber(tableNumber);
+      const newSegments = Array.from({ length: 10 }, (_, i) => ({
+        v: tableNumber * (i + 1),
+        c: DEFAULT_SPINNER_SEGMENTS[i % 10].c,
+      }));
+      setSpinner1Segments(newSegments);
+    } else {
+      setSpinner1Segments(DEFAULT_SPINNER_SEGMENTS);
+      setDivisionTableNumber(null);
+    }
+  };
+
   const handleGameStart = (settings: GameSettings) => {
+    setBoardLayout(PREDEFINED_BOARDS[settings.operation]);
     setGameSettings(settings);
+    prepareTurn(settings);
     setGameState("COIN_FLIP");
     setMessage("Sorteando quem começa...");
     playCoinSound();
@@ -1165,29 +1146,28 @@ function App() {
     setMessage("Configure o jogo para começar.");
     setSpinner1Value(null);
     setSpinner2Value(null);
+    setSpinner1Target(null);
+    setSpinner2Target(null);
     setBoardState(initialBoardState);
+    setSpinner1Segments(DEFAULT_SPINNER_SEGMENTS);
+    setDivisionTableNumber(null);
     setIsSpinning1(false);
     setIsSpinning2(false);
     setWinner(null);
   };
 
-  const handleDebugWin = () => {
-    setWinner("player1");
-    setGameState("GAME_OVER");
-    setMessage(`[DEBUG] ${gameSettings.player1.name.split(" ")[0]} venceu!`);
-  };
-
   const handleCoinFlipComplete = (result: "cara" | "coroa") => {
     const startingPlayer = result === "cara" ? "player1" : "player2";
     setCurrentPlayer(startingPlayer);
-
+    prepareTurn(gameSettings);
     const winnerName = gameSettings[startingPlayer].name.split(" ")[0];
-    const resultText =
-      result === "cara"
-        ? `Lado ${gameSettings.player1.name.split(" ")[0]}`
-        : `Lado ${gameSettings.player2.name.split(" ")[0]}`;
-    setMessage(`${resultText}! O jogador ${winnerName} começa.`);
-
+    setMessage(
+      `${
+        result === "cara"
+          ? `Lado ${gameSettings.player1.name.split(" ")[0]}`
+          : `Lado ${gameSettings.player2.name.split(" ")[0]}`
+      }! O jogador ${winnerName} começa.`
+    );
     setTimeout(() => {
       setGameState(
         `PLAYER_${startingPlayer === "player1" ? 1 : 2}_SPIN_1` as GameState
@@ -1204,7 +1184,6 @@ function App() {
     const { winCondition } = gameSettings;
     const numRows = currentBoard.length;
     const numCols = currentBoard[0].length;
-
     const declareWinner = () => {
       playSuccessSound();
       setWinner(player);
@@ -1212,16 +1191,12 @@ function App() {
       setMessage(`Fim de jogo!`);
       return true;
     };
-
     switch (winCondition) {
       case "first_to_5": {
-        const count = currentBoard
-          .flat()
-          .filter((cell) => cell === player).length;
-        if (count >= 5) return declareWinner();
+        if (currentBoard.flat().filter((cell) => cell === player).length >= 5)
+          return declareWinner();
         break;
       }
-
       case "connect_3": {
         const checkLine = (line: (Player | null)[]) => {
           for (let i = 0; i < line.length - 2; i++) {
@@ -1234,15 +1209,12 @@ function App() {
           }
           return false;
         };
-
         for (let r = 0; r < numRows; r++)
           if (checkLine(currentBoard[r])) return declareWinner();
-
         for (let c = 0; c < numCols; c++) {
           const col = currentBoard.map((row) => row[c]);
           if (checkLine(col)) return declareWinner();
         }
-
         for (let r = 0; r < numRows - 2; r++) {
           for (let c = 0; c < numCols - 2; c++) {
             if (
@@ -1253,7 +1225,6 @@ function App() {
               return declareWinner();
           }
         }
-
         for (let r = 2; r < numRows; r++) {
           for (let c = 0; c < numCols - 2; c++) {
             if (
@@ -1266,16 +1237,14 @@ function App() {
         }
         break;
       }
-
       case "most_on_full": {
-        const isFull = !currentBoard.flat().includes(null);
-        if (isFull) {
+        if (!currentBoard.flat().includes(null)) {
           const p1Count = currentBoard
             .flat()
-            .filter((cell) => cell === "player1").length;
+            .filter((c) => c === "player1").length;
           const p2Count = currentBoard
             .flat()
-            .filter((cell) => cell === "player2").length;
+            .filter((c) => c === "player2").length;
           if (p1Count > p2Count) setWinner("player1");
           else if (p2Count > p1Count) setWinner("player2");
           else setWinner(null);
@@ -1284,8 +1253,6 @@ function App() {
         }
         break;
       }
-      default:
-        return false;
     }
     return false;
   };
@@ -1296,8 +1263,11 @@ function App() {
     setGameState(
       `PLAYER_${nextPlayer === "player1" ? 1 : 2}_SPIN_1` as GameState
     );
+    prepareTurn(gameSettings);
     setSpinner1Value(null);
     setSpinner2Value(null);
+    setSpinner1Target(null);
+    setSpinner2Target(null);
     setMessage(
       `Vez do Jogador ${
         gameSettings[nextPlayer].name.split(" ")[0]
@@ -1305,16 +1275,49 @@ function App() {
     );
   };
 
+  const getCorrectAnswer = (
+    op: Operation,
+    val1: number,
+    val2: number
+  ): number | null => {
+    switch (op) {
+      case "×":
+        return val1 * val2;
+      case "+":
+        return val1 + val2;
+      case "-":
+        return val1 - val2;
+      case "÷":
+        return val1 % val2 === 0 ? val1 / val2 : null;
+    }
+  };
+
   const handlers: SceneHandlers = {
     currentPlayer,
     isSpinning1,
     isSpinning2,
+    spinner1Target,
+    spinner2Target,
+    spinner1Segments,
     handleSpin1Start: () => {
       setIsSpinning1((isCurrentlySpinning) => {
-        if (isCurrentlySpinning) {
-          return true;
+        if (isCurrentlySpinning) return true;
+        if (gameSettings.operation === "÷" && divisionTableNumber) {
+          const randomMultiplierIndex = Math.floor(Math.random() * 10);
+          const dividend = spinner1Segments[randomMultiplierIndex].v;
+          setSpinner1Target(dividend);
+          setSpinner2Target(divisionTableNumber);
+        } else {
+          const num1 = Math.floor(Math.random() * 10) + 1;
+          const num2 = Math.floor(Math.random() * 10) + 1;
+          if (gameSettings.operation === "-") {
+            setSpinner1Target(Math.max(num1, num2));
+            setSpinner2Target(Math.min(num1, num2));
+          } else {
+            setSpinner1Target(num1);
+            setSpinner2Target(num2);
+          }
         }
-
         setMessage("Girando...");
         playSpinnerSound();
         return true;
@@ -1326,14 +1329,11 @@ function App() {
       setGameState(
         `PLAYER_${currentPlayer === "player1" ? 1 : 2}_SPIN_2` as GameState
       );
-      setMessage(`Agora, clique na roleta da direita.`);
+      setMessage("Agora, clique na roleta da direita.");
     },
     handleSpin2Start: () => {
       setIsSpinning2((isCurrentlySpinning) => {
-        if (isCurrentlySpinning) {
-          return true;
-        }
-
+        if (isCurrentlySpinning) return true;
         setMessage("Girando...");
         playSpinnerSound();
         return true;
@@ -1346,7 +1346,7 @@ function App() {
         `PLAYER_${currentPlayer === "player1" ? 1 : 2}_ANSWER` as GameState
       );
       setMessage(
-        `Qual o resultado de ${spinner1Value} × ${value}? Clique no tabuleiro!`
+        `Qual o resultado de ${spinner1Value} ${gameSettings.operation} ${value}? Clique no tabuleiro!`
       );
     },
     handleCellClick: (cellValue, row, col) => {
@@ -1357,23 +1357,29 @@ function App() {
         spinner2Value === null
       )
         return;
-      const correctProduct = spinner1Value * spinner2Value;
+      const correctResult = getCorrectAnswer(
+        gameSettings.operation,
+        spinner1Value,
+        spinner2Value
+      );
       let isGameOver = false;
-      if (cellValue === correctProduct) {
+      if (correctResult !== null && cellValue === correctResult) {
         playSuccessSound();
         const newBoardState = boardState.map((r) => [...r]);
         newBoardState[row][col] = currentPlayer;
         setBoardState(newBoardState);
         setMessage(
-          `Correto! ${spinner1Value} × ${spinner2Value} = ${correctProduct}.`
+          `Correto! ${spinner1Value} ${gameSettings.operation} ${spinner2Value} = ${correctResult}.`
         );
         isGameOver = checkWinCondition(newBoardState, currentPlayer);
       } else {
         playErrorSound();
         setFlashingCell({ row, col });
-        setMessage(
-          `Incorreto. A resposta era ${correctProduct}. Passando a vez...`
-        );
+        const incorrectMessage =
+          correctResult !== null
+            ? `Incorreto. A resposta era ${correctResult}. Passando a vez...`
+            : `Incorreto. A operação ${spinner1Value} ${gameSettings.operation} ${spinner2Value} não resulta em um número inteiro. Passando a vez...`;
+        setMessage(incorrectMessage);
         setTimeout(() => setFlashingCell(null), 1600);
       }
       if (!isGameOver) {
@@ -1395,17 +1401,22 @@ function App() {
         onGameStart={handleGameStart}
         defaultSettings={DEFAULT_GAME_SETTINGS}
       />
-
       {gameState !== "SETUP" &&
         gameState !== "GAME_OVER" &&
         import.meta.env.MODE === "development" && (
           <div className="absolute bottom-5 left-5 z-50">
-            <Button onClick={handleDebugWin} variant="destructive" size="sm">
+            <Button
+              onClick={() => {
+                setWinner("player1");
+                setGameState("GAME_OVER");
+              }}
+              variant="destructive"
+              size="sm"
+            >
               Debug Win
             </Button>
           </div>
         )}
-
       <Canvas camera={{ position: [0, 15, 25], fov: 60 }} shadows>
         <color attach="background" args={["#101015"]} />
         <fog attach="fog" args={["#101015", 20, 60]} />

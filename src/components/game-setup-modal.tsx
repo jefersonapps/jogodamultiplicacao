@@ -30,6 +30,11 @@ const PREDEFINED_COLORS = [
 
 const WIN_CONDITIONS = [
   {
+    id: "first_to_3",
+    label: "Primeiro a ter 3 peças",
+    description: "O primeiro jogador a colocar 3 peças no tabuleiro vence.",
+  },
+  {
     id: "first_to_5",
     label: "Primeiro a ter 5 peças",
     description: "O primeiro jogador a colocar 5 peças no tabuleiro vence.",

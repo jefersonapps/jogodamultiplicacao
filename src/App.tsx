@@ -100,7 +100,7 @@ interface PlayerSettings {
 interface GameSettings {
   player1: PlayerSettings;
   player2: PlayerSettings;
-  winCondition: "first_to_5" | "connect_3" | "most_on_full";
+  winCondition: "first_to_3" | "first_to_5" | "connect_3" | "most_on_full";
   operation: Operation;
 }
 interface Particle {
@@ -1207,6 +1207,11 @@ function App() {
       return true;
     };
     switch (winCondition) {
+      case "first_to_3": {
+        if (currentBoard.flat().filter((cell) => cell === player).length >= 3)
+          return declareWinner();
+        break;
+      }
       case "first_to_5": {
         if (currentBoard.flat().filter((cell) => cell === player).length >= 5)
           return declareWinner();
